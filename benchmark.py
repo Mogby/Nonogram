@@ -10,6 +10,19 @@ def median(dist):
     return sorted(dist)[med_idx]
 
 
+def mean(dist):
+    return sum(dist) / len(dist)
+
+
+def var(dist):
+    d_mean = mean(dist)
+    return mean([(v - d_mean) ** 2 for v in dist])
+
+
+def std(dist):
+    return var(dist) ** 0.5
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", "--n-iter", type=int, required=False, default=10)
@@ -32,7 +45,10 @@ def main():
             cmd.run_fg()
             end_ts = time.time_ns()
             test_dist.append(end_ts - start_ts)
-        print(f"{test_file.name}: q50={median(test_dist):,}ns")
+
+        t_mid = median(test_dist)
+        t_std = round(std(test_dist))
+        print(f"{test_file.name}: q50={t_mid:,}ns std={t_std:,}ns")
 
 
 if __name__ == "__main__":

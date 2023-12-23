@@ -1,5 +1,6 @@
 #include <cassert>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <istream>
@@ -63,23 +64,25 @@ void print_puzzle(std::ostream &os, const Puzzle &puzzle) {
 
 struct Solution {
   Solution(int width, int height)
-      : m_cells(height, std::vector<bool>(width, false)) {}
+      : m_cells_(height, std::vector<bool>(width, false)),
+        m_cells_transposed_(width, std::vector<bool>(height, false)) {}
 
-  std::vector<bool> get_row(int i) const { return m_cells[i]; }
-
-  std::vector<bool> get_column(int j) const {
-    std::vector<bool> column;
-    for (const auto &row : m_cells) {
-      column.push_back(row[j]);
-    }
-    return column;
+  void set_cell(int i, int j, bool value) {
+    m_cells_[i][j] = value;
+    m_cells_transposed_[j][i] = value;
   }
 
-  std::vector<std::vector<bool>> m_cells;
+  const std::vector<bool> &get_row(int i) const { return m_cells_[i]; }
+  const std::vector<bool> &get_column(int j) const {
+    return m_cells_transposed_[j];
+  }
+
+  std::vector<std::vector<bool>> m_cells_;
+  std::vector<std::vector<bool>> m_cells_transposed_;
 };
 
 void print_solution(std::ostream &os, const Solution &solution) {
-  for (const auto &row : solution.m_cells) {
+  for (const auto &row : solution.m_cells_) {
     for (auto v : row) {
       if (v) {
         os << "X";
@@ -125,16 +128,14 @@ bool match_pattern(const std::vector<int> &pattern,
 
 bool is_valid_solution(const Solution &solution, const Puzzle &puzzle) {
   for (int i = 0; i < puzzle.m_height; ++i) {
-    auto row = solution.get_row(i);
-    auto row_pattern = encode_line(row);
+    auto row_pattern = encode_line(solution.get_row(i));
     if (!match_pattern(row_pattern, puzzle.m_rows[i])) {
       return false;
     }
   }
 
   for (int j = 0; j < puzzle.m_width; ++j) {
-    auto col = solution.get_column(j);
-    auto col_pattern = encode_line(col);
+    auto col_pattern = encode_line(solution.get_column(j));
     if (!match_pattern(col_pattern, puzzle.m_cols[j])) {
       return false;
     }
@@ -164,12 +165,12 @@ bool solve_iter(int i, int j, Solution &solution, const Puzzle &puzzle) {
     return true;
   }
 
-  solution.m_cells[i][j] = true;
+  solution.set_cell(i, j, true);
   if (solve_iter(next_i, next_j, solution, puzzle)) {
     return true;
   }
 
-  solution.m_cells[i][j] = false;
+  solution.set_cell(i, j, false);
 
   return false;
 }
@@ -187,7 +188,7 @@ int main(int argc, char **argv) {
   std::ifstream file(argv[1]);
   bool quiet = false;
   if (argc == 3) {
-    assert(argv[2] == "-q" || argv[2] == "--quiet");
+    assert(!strcmp(argv[2], "-q") || !strcmp(argv[2], "--quiet"));
     quiet = true;
   }
 
