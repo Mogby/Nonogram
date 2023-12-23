@@ -94,33 +94,43 @@ void print_solution(std::ostream &os, const Solution &solution) {
   }
 }
 
-std::vector<int> encode_line(const std::vector<bool> &line) {
-  std::vector<int> pattern;
-  int len = 0;
-  for (auto c : line) {
-    if (c) {
-      ++len;
-    } else if (len > 0) {
-      pattern.push_back(len);
-      len = 0;
+bool match_pattern(const std::vector<bool> &pattern,
+                   const std::vector<int> &rules) {
+  int rule_i = 0;
+  int block_length = 0;
+  for (auto v : pattern) {
+    if (rule_i == rules.size()) {
+      break;
+    }
+
+    if (v) {
+      ++block_length;
+      if (block_length > rules[rule_i]) {
+        return false;
+      }
+    } else if (block_length > 0) {
+      if (block_length != rules[rule_i]) {
+        return false;
+      }
+      block_length = 0;
+      ++rule_i;
     }
   }
-  if (len > 0) {
-    pattern.push_back(len);
-  }
-  return pattern;
-}
 
-bool match_pattern(const std::vector<int> &pattern,
-                   const std::vector<int> &rules) {
-  if (pattern.size() != rules.size()) {
-    return false;
-  }
-
-  for (int i = 0; i < pattern.size(); ++i) {
-    if (pattern[i] != rules[i]) {
+  if (block_length > 0) {
+    if (rule_i != rules.size() - 1) {
       return false;
     }
+
+    if (rules.back() != block_length) {
+      return false;
+    }
+
+    ++rule_i;
+  }
+
+  if (rule_i != rules.size()) {
+    return false;
   }
 
   return true;
@@ -128,15 +138,13 @@ bool match_pattern(const std::vector<int> &pattern,
 
 bool is_valid_solution(const Solution &solution, const Puzzle &puzzle) {
   for (int i = 0; i < puzzle.m_height; ++i) {
-    auto row_pattern = encode_line(solution.get_row(i));
-    if (!match_pattern(row_pattern, puzzle.m_rows[i])) {
+    if (!match_pattern(solution.get_row(i), puzzle.m_rows[i])) {
       return false;
     }
   }
 
   for (int j = 0; j < puzzle.m_width; ++j) {
-    auto col_pattern = encode_line(solution.get_column(j));
-    if (!match_pattern(col_pattern, puzzle.m_cols[j])) {
+    if (!match_pattern(solution.get_column(j), puzzle.m_cols[j])) {
       return false;
     }
   }
