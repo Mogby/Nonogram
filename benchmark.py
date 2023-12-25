@@ -1,5 +1,5 @@
 import argparse
-import time
+from typing import cast
 
 from plumbum import local
 from pathlib import Path
@@ -30,7 +30,7 @@ def main():
 
     workdir = Path(__file__).parent
     test_data_dir = workdir / "test_data"
-    exec_path = workdir / "build" / "nonogram"
+    exec_path = workdir / "build" / "Release" / "nonogram"
 
     test_files = sorted(test_data_dir.iterdir())
 
@@ -40,11 +40,15 @@ def main():
             continue
         test_dist = []
         for _ in range(args.n_iter):
-            start_ts = time.time_ns()
-            cmd = local[exec_path][test_file]["-q"]
-            cmd.run_fg()
-            end_ts = time.time_ns()
-            test_dist.append(end_ts - start_ts)
+            cmd = local[exec_path][test_file]["-q"]["-b"]
+            fut = cmd.run_bg()
+            fut.wait()
+            # fut.stdout = "solve_puzzle took X ns"
+            stdout = fut.stdout
+            assert stdout is not None
+            stdout = cast(str, stdout)
+            bench_time = int(stdout.removeprefix("solve_puzzle took ").split(" ")[0])
+            test_dist.append(bench_time)
 
         t_mid = median(test_dist)
         t_std = round(std(test_dist))
