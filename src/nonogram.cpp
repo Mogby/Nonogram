@@ -1,14 +1,14 @@
 #include "nonogram.hpp"
 
-void Puzzle::resize(int width, int height) {
-  m_width = width;
-  m_height = height;
-  m_vertical_rules.resize(width);
-  m_horizontal_rules.resize(height);
-}
+#include <cassert>
 
-void read_rules(std::istream &is, std::vector<std::vector<int>> &rules) {
+Puzzle::Puzzle(int width, int height)
+    : m_width(width), m_height(height), m_vertical_rules(width),
+      m_horizontal_rules(height) {}
+
+std::vector<std::vector<int>> read_rules(std::istream &is, int n_rules) {
   int line_size;
+  std::vector<std::vector<int>> rules(n_rules);
   for (int i = 0; i < rules.size(); ++i) {
     is >> line_size;
     rules[i].resize(line_size);
@@ -16,16 +16,18 @@ void read_rules(std::istream &is, std::vector<std::vector<int>> &rules) {
       is >> rules[i][j];
     }
   }
+  return rules;
 }
 
-void read_puzzle(std::istream &is, Puzzle &puzzle) {
+Puzzle read_puzzle(std::istream &is) {
   int width, height;
   is >> width;
   is >> height;
 
-  puzzle.resize(width, height);
-  read_rules(is, puzzle.m_vertical_rules);
-  read_rules(is, puzzle.m_horizontal_rules);
+  Puzzle puzzle(width, height);
+  puzzle.m_vertical_rules = read_rules(is, width);
+  puzzle.m_horizontal_rules = read_rules(is, height);
+  return puzzle;
 }
 
 void print_rules(std::ostream &os, const std::vector<std::vector<int>> &rules) {

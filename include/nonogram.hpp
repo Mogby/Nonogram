@@ -1,23 +1,18 @@
 #pragma once
 
-#include <cassert>
-#include <cstdlib>
-#include <cstring>
-#include <fstream>
 #include <iostream>
-#include <istream>
-#include <random>
+#include <vector>
 
 struct Puzzle {
+  Puzzle(int width, int height);
+
   int m_width;
   int m_height;
   std::vector<std::vector<int>> m_vertical_rules;
   std::vector<std::vector<int>> m_horizontal_rules;
-
-  void resize(int width, int height);
 };
 
-void read_puzzle(std::istream &is, Puzzle &puzzle);
+Puzzle read_puzzle(std::istream &is);
 void print_puzzle(std::ostream &os, const Puzzle &puzzle);
 
 struct Solution {

@@ -55,8 +55,7 @@ int main(int argc, char **argv) {
 
   std::ifstream file(options.input_file);
 
-  Puzzle p;
-  read_puzzle(file, p);
+  auto p = read_puzzle(file);
   if (!options.quiet) {
     print_puzzle(std::cout, p);
   }
