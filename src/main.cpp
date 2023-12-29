@@ -3,6 +3,7 @@
 #include <boost/program_options.hpp>
 
 #include <cstdlib>
+#include <fstream>
 
 namespace po = boost::program_options;
 
@@ -78,6 +79,7 @@ int main(int argc, char **argv) {
   if (!options.quiet) {
     print_solution(std::cout, s.value());
   }
+  assert(s->m_is_final);
 
   return 0;
 }
