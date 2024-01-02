@@ -4,19 +4,26 @@
 #include <optional>
 
 #include <cassert>
+#include <sstream>
+#include <string>
 
 Puzzle::Puzzle(int width, int height)
     : m_width(width), m_height(height), m_vertical_rules(width),
       m_horizontal_rules(height) {}
 
+std::istringstream read_next_line(std::istream &is) {
+  std::string line;
+  std::getline(is, line);
+  return std::istringstream(line);
+}
+
 std::vector<std::vector<int>> read_rules(std::istream &is, int n_rules) {
-  int line_size;
   std::vector<std::vector<int>> rules(n_rules);
   for (int i = 0; i < rules.size(); ++i) {
-    is >> line_size;
-    rules[i].resize(line_size);
-    for (int j = 0; j < line_size; ++j) {
-      is >> rules[i][j];
+    auto line = read_next_line(is);
+    Rule rule;
+    while (line >> rule) {
+      rules[i].push_back(rule);
     }
   }
   return rules;
@@ -24,9 +31,7 @@ std::vector<std::vector<int>> read_rules(std::istream &is, int n_rules) {
 
 Puzzle read_puzzle(std::istream &is) {
   int width, height;
-  is >> width;
-  is >> height;
-
+  read_next_line(is) >> width >> height;
   Puzzle puzzle(width, height);
   puzzle.m_vertical_rules = read_rules(is, width);
   puzzle.m_horizontal_rules = read_rules(is, height);
@@ -34,15 +39,18 @@ Puzzle read_puzzle(std::istream &is) {
 }
 
 void print_rules(std::ostream &os, const std::vector<std::vector<int>> &rules) {
+  int sum = 0;
   os << "[" << std::endl;
   for (const auto &line : rules) {
     os << " [";
     for (const auto value : line) {
       os << " " << value;
+      sum += value;
     }
     os << " ]" << std::endl;
   }
   os << "]" << std::endl;
+  os << "sum :" << sum << std::endl;
 }
 
 void print_puzzle(std::ostream &os, const Puzzle &puzzle) {
@@ -99,7 +107,8 @@ char print_cell(Cell c) {
 void print_solution(std::ostream &os, const Solution &solution) {
   for (const auto &row : solution.m_cells_) {
     for (auto v : row) {
-      os << print_cell(v);
+      os << print_cell(v)
+         << print_cell(v); // print twice for better proportions
     }
     os << std::endl;
   }
@@ -298,22 +307,24 @@ Solution solve_iter(const Puzzle &puzzle, Solution &solution) {
     }
   }
 
-  bool has_unknown_cells = false;
   for (int i = 0; i < solution.m_height; ++i) {
     for (int j = 0; j < solution.m_width; ++j) {
       if (solution.get_cell(i, j) == Cell::UNKNOWN) {
-        has_unknown_cells = true;
-        auto solution_bt = solution;
-        solution_bt.set_cell(i, j, Cell::FILLED);
-        auto next_solution = solve_iter(puzzle, solution_bt);
-        if (next_solution.m_is_final) {
-          return next_solution;
+        for (auto bt_value : {Cell::FILLED, Cell::EMPTY}) {
+          auto solution_bt = solution;
+          solution_bt.set_cell(i, j, bt_value);
+          auto next_solution = solve_iter(puzzle, solution_bt);
+          if (next_solution.m_is_final) {
+            return next_solution;
+          }
         }
+        solution.m_is_final = false;
+        return solution;
       }
     }
   }
 
-  solution.m_is_final = !has_unknown_cells;
+  solution.m_is_final = true;
   return solution;
 }
 
