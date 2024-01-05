@@ -1,11 +1,14 @@
 #include "nonogram.hpp"
 
+#include <algorithm>
 #include <iterator>
+#include <numeric>
 #include <optional>
 
 #include <cassert>
 #include <sstream>
 #include <string>
+#include <utility>
 
 Puzzle::Puzzle(int width, int height)
     : m_width(width), m_height(height), m_vertical_rules(width),
@@ -69,8 +72,16 @@ Solution::Solution(int width, int height)
 
 Cell Solution::get_cell(int i, int j) const { return m_cells_[i][j]; }
 void Solution::set_cell(int i, int j, Cell value) {
+  auto old_value = std::to_underlying(m_cells_[i][j]);
+  auto new_value = std::to_underlying(value);
   m_cells_[i][j] = value;
   m_cells_transposed_[j][i] = value;
+
+  --m_cells_[i].cells_counts[old_value];
+  ++m_cells_[j].cells_counts[new_value];
+
+  --m_cells_transposed_[i].cells_counts[old_value];
+  ++m_cells_transposed_[i].cells_counts[new_value];
 }
 
 void Solution::set_row(int i, const CellsLine &line) {
@@ -91,6 +102,31 @@ const CellsLine &Solution::get_row(int i) const { return m_cells_[i]; }
 CellsLine &Solution::get_column(int j) { return m_cells_transposed_[j]; }
 const CellsLine &Solution::get_column(int j) const {
   return m_cells_transposed_[j];
+}
+
+bool compare_solution_lines(const CellsLine &l, const CellsLine &r) {
+  const auto unk_index = std::to_underlying(Cell::UNKNOWN);
+  return l.cells_counts.at(unk_index) > r.cells_counts.at(unk_index);
+}
+
+std::vector<int> Solution::get_rows_solve_order() const {
+  std::vector<int> rows_solve_order(m_height);
+  std::iota(rows_solve_order.begin(), rows_solve_order.end(), 0);
+  std::sort(rows_solve_order.begin(), rows_solve_order.end(),
+            [&](int l, int r) {
+              return compare_solution_lines(get_row(l), get_row(r));
+            });
+  return rows_solve_order;
+}
+
+std::vector<int> Solution::get_columns_solve_order() const {
+  std::vector<int> columns_solve_order(m_width);
+  std::iota(columns_solve_order.begin(), columns_solve_order.end(), 0);
+  std::sort(columns_solve_order.begin(), columns_solve_order.end(),
+            [&](int l, int r) {
+              return compare_solution_lines(get_column(l), get_column(r));
+            });
+  return columns_solve_order;
 }
 
 char print_cell(Cell c) {
@@ -286,7 +322,8 @@ Solution solve_iter(const Puzzle &puzzle, Solution &solution) {
   while (updated) {
     updated = false;
 
-    for (int j = 0; j < puzzle.m_width; ++j) {
+    auto rows_solve_order = solution.get_rows_solve_order();
+    for (auto j : rows_solve_order) {
       update_result = update_cells(puzzle.m_vertical_rules[j],
                                    solution.m_cells_transposed_[j]);
       if (!update_result.m_rules_fit) {
@@ -296,7 +333,8 @@ Solution solve_iter(const Puzzle &puzzle, Solution &solution) {
       solution.set_column(j, solution.m_cells_transposed_[j]);
     }
 
-    for (int i = 0; i < puzzle.m_height; ++i) {
+    auto columns_solve_order = solution.get_columns_solve_order();
+    for (auto i : columns_solve_order) {
       update_result =
           update_cells(puzzle.m_horizontal_rules[i], solution.m_cells_[i]);
       if (!update_result.m_rules_fit) {

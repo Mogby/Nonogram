@@ -20,11 +20,16 @@ struct Puzzle {
 Puzzle read_puzzle(std::istream &is);
 void print_puzzle(std::ostream &os, const Puzzle &puzzle);
 
-enum class Cell { UNKNOWN, FILLED, EMPTY };
+enum class Cell : int { UNKNOWN = 0, FILLED = 1, EMPTY = 2 };
 
 char print_cell(Cell c);
 
-using CellsLine = std::vector<Cell>;
+struct CellsLine : public std::vector<Cell> {
+  template <typename... Args>
+  CellsLine(Args &&...args) : std::vector<Cell>(std::forward<Args>(args)...) {}
+
+  std::array<int, 3> cells_counts{0, 0, 0};
+};
 
 struct Solution {
   Solution(int width, int height);
@@ -40,6 +45,9 @@ struct Solution {
 
   const CellsLine &get_row(int i) const;
   const CellsLine &get_column(int j) const;
+
+  std::vector<int> get_rows_solve_order() const;
+  std::vector<int> get_columns_solve_order() const;
 
   int m_width;
   int m_height;
