@@ -24,12 +24,8 @@ enum class Cell : int { UNKNOWN = 0, FILLED = 1, EMPTY = 2 };
 
 char print_cell(Cell c);
 
-struct CellsLine : public std::vector<Cell> {
-  template <typename... Args>
-  CellsLine(Args &&...args) : std::vector<Cell>(std::forward<Args>(args)...) {}
-
-  std::array<int, 3> cells_counts{0, 0, 0};
-};
+using CellsLine = std::vector<Cell>;
+using CellsCounts = std::array<int, 3>;
 
 struct Solution {
   Solution(int width, int height);
@@ -40,11 +36,8 @@ struct Solution {
   void set_row(int i, const CellsLine &line);
   void set_column(int j, const CellsLine &line);
 
-  CellsLine &get_row(int i);
-  CellsLine &get_column(int j);
-
-  const CellsLine &get_row(int i) const;
-  const CellsLine &get_column(int j) const;
+  CellsLine get_row(int i) const;
+  CellsLine get_column(int j) const;
 
   std::vector<int> get_rows_solve_order() const;
   std::vector<int> get_columns_solve_order() const;
@@ -56,6 +49,9 @@ struct Solution {
 
   std::vector<CellsLine> m_cells_;
   std::vector<CellsLine> m_cells_transposed_;
+
+  std::vector<CellsCounts> m_rows_cells_counts_;
+  std::vector<CellsCounts> m_columns_cells_counts_;
 };
 
 void print_solution(std::ostream &os, const Solution &solution);

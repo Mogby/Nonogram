@@ -53,7 +53,7 @@ void print_rules(std::ostream &os, const std::vector<std::vector<int>> &rules) {
     os << " ]" << std::endl;
   }
   os << "]" << std::endl;
-  os << "sum :" << sum << std::endl;
+  os << "sum: " << sum << std::endl;
 }
 
 void print_puzzle(std::ostream &os, const Puzzle &puzzle) {
@@ -68,20 +68,22 @@ void print_puzzle(std::ostream &os, const Puzzle &puzzle) {
 Solution::Solution(int width, int height)
     : m_width(width), m_height(height), m_is_final(false),
       m_cells_(height, CellsLine(width, Cell::UNKNOWN)),
-      m_cells_transposed_(width, CellsLine(height, Cell::UNKNOWN)) {}
+      m_cells_transposed_(width, CellsLine(height, Cell::UNKNOWN)),
+      m_rows_cells_counts_(height, CellsCounts{width, 0, 0}),
+      m_columns_cells_counts_(width, CellsCounts{height, 0, 0}) {}
 
 Cell Solution::get_cell(int i, int j) const { return m_cells_[i][j]; }
 void Solution::set_cell(int i, int j, Cell value) {
   auto old_value = std::to_underlying(m_cells_[i][j]);
   auto new_value = std::to_underlying(value);
+  --m_rows_cells_counts_[i][old_value];
+  ++m_rows_cells_counts_[i][new_value];
+  --m_columns_cells_counts_[j][old_value];
+  ++m_columns_cells_counts_[j][new_value];
+
+  assert(m_cells_[i][j] == m_cells_transposed_[j][i]);
   m_cells_[i][j] = value;
   m_cells_transposed_[j][i] = value;
-
-  --m_cells_[i].cells_counts[old_value];
-  ++m_cells_[j].cells_counts[new_value];
-
-  --m_cells_transposed_[i].cells_counts[old_value];
-  ++m_cells_transposed_[i].cells_counts[new_value];
 }
 
 void Solution::set_row(int i, const CellsLine &line) {
@@ -96,25 +98,15 @@ void Solution::set_column(int j, const CellsLine &line) {
   }
 }
 
-CellsLine &Solution::get_row(int i) { return m_cells_[i]; }
-const CellsLine &Solution::get_row(int i) const { return m_cells_[i]; }
-
-CellsLine &Solution::get_column(int j) { return m_cells_transposed_[j]; }
-const CellsLine &Solution::get_column(int j) const {
-  return m_cells_transposed_[j];
-}
-
-bool compare_solution_lines(const CellsLine &l, const CellsLine &r) {
-  const auto unk_index = std::to_underlying(Cell::UNKNOWN);
-  return l.cells_counts.at(unk_index) > r.cells_counts.at(unk_index);
-}
+CellsLine Solution::get_row(int i) const { return m_cells_[i]; }
+CellsLine Solution::get_column(int j) const { return m_cells_transposed_[j]; }
 
 std::vector<int> Solution::get_rows_solve_order() const {
   std::vector<int> rows_solve_order(m_height);
   std::iota(rows_solve_order.begin(), rows_solve_order.end(), 0);
   std::sort(rows_solve_order.begin(), rows_solve_order.end(),
             [&](int l, int r) {
-              return compare_solution_lines(get_row(l), get_row(r));
+              return m_rows_cells_counts_[l][0] > m_rows_cells_counts_[r][0];
             });
   return rows_solve_order;
 }
@@ -124,7 +116,8 @@ std::vector<int> Solution::get_columns_solve_order() const {
   std::iota(columns_solve_order.begin(), columns_solve_order.end(), 0);
   std::sort(columns_solve_order.begin(), columns_solve_order.end(),
             [&](int l, int r) {
-              return compare_solution_lines(get_column(l), get_column(r));
+              return m_columns_cells_counts_[l][0] >
+                     m_columns_cells_counts_[r][0];
             });
   return columns_solve_order;
 }
@@ -324,24 +317,24 @@ Solution solve_iter(const Puzzle &puzzle, Solution &solution) {
 
     auto rows_solve_order = solution.get_rows_solve_order();
     for (auto j : rows_solve_order) {
-      update_result = update_cells(puzzle.m_vertical_rules[j],
-                                   solution.m_cells_transposed_[j]);
+      auto column = solution.get_column(j);
+      update_result = update_cells(puzzle.m_vertical_rules[j], column);
       if (!update_result.m_rules_fit) {
         return solution;
       }
       updated = updated || update_result.m_line_updated;
-      solution.set_column(j, solution.m_cells_transposed_[j]);
+      solution.set_column(j, column);
     }
 
     auto columns_solve_order = solution.get_columns_solve_order();
     for (auto i : columns_solve_order) {
-      update_result =
-          update_cells(puzzle.m_horizontal_rules[i], solution.m_cells_[i]);
+      auto row = solution.get_row(i);
+      update_result = update_cells(puzzle.m_horizontal_rules[i], row);
       if (!update_result.m_rules_fit) {
         return solution;
       }
       updated = updated || update_result.m_line_updated;
-      solution.set_row(i, solution.m_cells_[i]);
+      solution.set_row(i, row);
     }
   }
 
