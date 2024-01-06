@@ -35,11 +35,8 @@ struct Solution {
   void set_row(int i, const CellsLine &line);
   void set_column(int j, const CellsLine &line);
 
-  CellsLine &get_row(int i);
-  CellsLine &get_column(int j);
-
-  const CellsLine &get_row(int i) const;
-  const CellsLine &get_column(int j) const;
+  CellsLine get_row(int i) const;
+  CellsLine get_column(int j) const;
 
   int m_width;
   int m_height;
