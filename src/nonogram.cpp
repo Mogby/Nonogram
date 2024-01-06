@@ -287,23 +287,23 @@ Solution solve_iter(const Puzzle &puzzle, Solution &solution) {
     updated = false;
 
     for (int j = 0; j < puzzle.m_width; ++j) {
-      update_result = update_cells(puzzle.m_vertical_rules[j],
-                                   solution.m_cells_transposed_[j]);
+      auto &column = solution.get_column(j);
+      update_result = update_cells(puzzle.m_vertical_rules[j], column);
       if (!update_result.m_rules_fit) {
         return solution;
       }
       updated = updated || update_result.m_line_updated;
-      solution.set_column(j, solution.m_cells_transposed_[j]);
+      solution.set_column(j, column);
     }
 
     for (int i = 0; i < puzzle.m_height; ++i) {
-      update_result =
-          update_cells(puzzle.m_horizontal_rules[i], solution.m_cells_[i]);
+      auto &row = solution.get_row(i);
+      update_result = update_cells(puzzle.m_horizontal_rules[i], row);
       if (!update_result.m_rules_fit) {
         return solution;
       }
       updated = updated || update_result.m_line_updated;
-      solution.set_row(i, solution.m_cells_[i]);
+      solution.set_row(i, row);
     }
   }
 
