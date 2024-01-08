@@ -45,6 +45,9 @@ struct Solution {
 
   std::vector<CellsLine> m_cells_;
   std::vector<CellsLine> m_cells_transposed_;
+
+  std::vector<bool> m_row_solved_flg;
+  std::vector<bool> m_column_solved_flg;
 };
 
 void print_solution(std::ostream &os, const Solution &solution);
@@ -58,6 +61,7 @@ std::optional<std::vector<int>> fit_right(const RulesLine &rules,
 struct UpdateResult {
   bool m_rules_fit;
   bool m_line_updated;
+  bool m_line_solved;
 };
 
 UpdateResult update_cells(const RulesLine &rules, CellsLine &line);

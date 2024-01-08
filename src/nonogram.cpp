@@ -65,7 +65,8 @@ void print_puzzle(std::ostream &os, const Puzzle &puzzle) {
 Solution::Solution(int width, int height)
     : m_width(width), m_height(height), m_is_final(false),
       m_cells_(height, CellsLine(width, Cell::UNKNOWN)),
-      m_cells_transposed_(width, CellsLine(height, Cell::UNKNOWN)) {}
+      m_cells_transposed_(width, CellsLine(height, Cell::UNKNOWN)),
+      m_row_solved_flg(height, false), m_column_solved_flg(width, false) {}
 
 Cell Solution::get_cell(int i, int j) const { return m_cells_[i][j]; }
 void Solution::set_cell(int i, int j, Cell value) {
@@ -259,7 +260,9 @@ UpdateResult update_cells(const RulesLine &rules, CellsLine &line) {
   bool line_updated = false;
   if (rules.size() == 0) {
     if (range_has_filled_cells(line.begin(), line.end())) {
-      return {.m_rules_fit = false, .m_line_updated = false};
+      return {.m_rules_fit = false,
+              .m_line_updated = false,
+              .m_line_solved = false};
     }
 
     for (int i = 0; i < line.size(); ++i) {
@@ -268,12 +271,15 @@ UpdateResult update_cells(const RulesLine &rules, CellsLine &line) {
         line_updated = true;
       }
     }
-    return {.m_rules_fit = true, .m_line_updated = line_updated};
+    return {.m_rules_fit = true,
+            .m_line_updated = line_updated,
+            .m_line_solved = true};
   }
 
   auto lfit_opt = fit_left(rules, line);
   if (!lfit_opt.has_value()) {
-    return {.m_rules_fit = false, .m_line_updated = false};
+    return {
+        .m_rules_fit = false, .m_line_updated = false, .m_line_solved = false};
   }
   auto rfit_opt = fit_right(rules, line);
   assert(rfit_opt.has_value());
@@ -285,7 +291,12 @@ UpdateResult update_cells(const RulesLine &rules, CellsLine &line) {
   int intersect_left = rfit[0];
   int intersect_right = lfit[0] + rules[0];
   int prev_rule_rightmost_i = 0;
+  bool line_solved = true;
   for (int i = 0; i < line.size(); ++i) {
+    if (line_solved && rule_i < rules.size() && lfit[rule_i] != rfit[rule_i]) {
+      line_solved = false;
+    }
+
     if (prev_rule_rightmost_i <= i) {
       if ((rule_i == rules.size() && i < line.size()) || (i < lfit[rule_i])) {
         // cell cannot covered by any rule
@@ -315,7 +326,9 @@ UpdateResult update_cells(const RulesLine &rules, CellsLine &line) {
     }
   }
 
-  return {.m_rules_fit = true, .m_line_updated = line_updated};
+  return {.m_rules_fit = rule_i == rules.size(),
+          .m_line_updated = line_updated,
+          .m_line_solved = line_solved};
 }
 
 Solution solve_iter(const Puzzle &puzzle, Solution &solution) {
@@ -325,20 +338,32 @@ Solution solve_iter(const Puzzle &puzzle, Solution &solution) {
     updated = false;
 
     for (int j = 0; j < puzzle.m_width; ++j) {
+      if (solution.m_column_solved_flg[j]) {
+        continue;
+      }
       auto column = solution.get_column(j);
       update_result = update_cells(puzzle.m_vertical_rules[j], column);
       if (!update_result.m_rules_fit) {
         return solution;
+      }
+      if (update_result.m_line_solved) {
+        solution.m_column_solved_flg[j] = true;
       }
       updated = updated || update_result.m_line_updated;
       solution.set_column(j, column);
     }
 
     for (int i = 0; i < puzzle.m_height; ++i) {
+      if (solution.m_row_solved_flg[i]) {
+        continue;
+      }
       auto row = solution.get_row(i);
       update_result = update_cells(puzzle.m_horizontal_rules[i], row);
       if (!update_result.m_rules_fit) {
         return solution;
+      }
+      if (update_result.m_line_solved) {
+        solution.m_row_solved_flg[i] = true;
       }
       updated = updated || update_result.m_line_updated;
       solution.set_row(i, row);
