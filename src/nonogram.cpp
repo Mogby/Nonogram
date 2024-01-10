@@ -1,9 +1,9 @@
 #include "nonogram.hpp"
 
-#include <iterator>
 #include <optional>
 
 #include <cassert>
+#include <ranges>
 #include <sstream>
 #include <string>
 
@@ -62,42 +62,40 @@ void print_puzzle(std::ostream &os, const Puzzle &puzzle) {
   print_rules(os, puzzle.m_horizontal_rules);
 }
 
-template <typename I, typename V>
-concept forward_iterator_for_value =
-    std::forward_iterator<I> &&
-    std::same_as<typename std::iterator_traits<I>::value_type, V>;
+template <typename Range, typename Value>
+concept array_like_range_for_value =
+    std::ranges::random_access_range<Range> &&
+    std::ranges::sized_range<Range> &&
+    std::same_as<std::ranges::range_value_t<Range>, Value>;
 
-template <typename RuleIter>
-  requires forward_iterator_for_value<RuleIter, Rule>
-void reverse_fit(int line_size, RuleIter rules_begin, RuleIter rules_end,
+template <typename RulesRange>
+  requires array_like_range_for_value<RulesRange, Rule>
+void reverse_fit(int line_size, const RulesRange &rules,
                  std::vector<int> &fit) {
-  assert(rules_end - rules_begin == fit.size());
+  assert(rules.size() == fit.size());
   for (int i = 0; i < fit.size(); ++i) {
-    fit[i] = line_size - fit[i] - *(rules_begin++);
+    fit[i] = line_size - fit[i] - rules[i];
   }
   std::reverse(fit.begin(), fit.end());
 }
 
-template <typename RuleIter>
-  requires forward_iterator_for_value<RuleIter, Rule>
-std::vector<int> make_lfit_from_rules_range(RuleIter begin, RuleIter end) {
+template <typename RulesRange>
+  requires array_like_range_for_value<RulesRange, Rule>
+std::vector<int> make_lfit_from_rules(const RulesRange &rules) {
   std::vector<int> lfit;
   int cur_pos = 0;
-  for (; begin != end; ++begin) {
+  for (auto rule : rules) {
     lfit.push_back(cur_pos);
-    cur_pos += *begin + 1;
+    cur_pos += rule + 1;
   }
   return lfit;
 }
 
-std::vector<int> make_lfit_from_rules(const RulesLine &rules) {
-  return make_lfit_from_rules_range(rules.begin(), rules.end());
-}
-
 std::vector<int> make_rfit_from_rules(const int line_size,
                                       const RulesLine &rules) {
-  auto fit = make_lfit_from_rules_range(rules.rbegin(), rules.rend());
-  reverse_fit(line_size, rules.rbegin(), rules.rend(), fit);
+  auto reversed_rules = rules | std::views::reverse;
+  auto fit = make_lfit_from_rules(reversed_rules);
+  reverse_fit(line_size, reversed_rules, fit);
   return fit;
 }
 
@@ -114,9 +112,9 @@ void SolutionLine::update_fits(std::vector<int> &&lfit,
   m_lfit = std::move(lfit);
   m_rfit = std::move(rfit);
   m_lfit_reversed = m_rfit;
-  reverse_fit(size(), m_rules.begin(), m_rules.end(), m_lfit_reversed);
+  reverse_fit(size(), m_rules, m_lfit_reversed);
   m_rfit_reversed = m_lfit;
-  reverse_fit(size(), m_rules.begin(), m_rules.end(), m_rfit_reversed);
+  reverse_fit(size(), m_rules, m_rfit_reversed);
 }
 
 const size_t SolutionLine::size() const { return m_cells.size(); }
@@ -194,143 +192,137 @@ void print_solution(std::ostream &os, const Solution &solution) {
   }
 }
 
-template <typename CellIter>
-  requires forward_iterator_for_value<CellIter, Cell>
-bool range_has_filled_cells(CellIter begin, CellIter end) {
-  return std::find(begin, end, Cell::FILLED) != end;
+template <typename CellsRange>
+  requires array_like_range_for_value<CellsRange, Cell>
+bool range_has_filled_cells(CellsRange &&cells) {
+  return std::ranges::find(std::forward<CellsRange>(cells), Cell::FILLED) !=
+         std::ranges::end(cells);
 }
 
-template <typename CellIter>
-  requires forward_iterator_for_value<CellIter, Cell>
-bool range_has_empty_cells(CellIter begin, CellIter end) {
-  return std::find(begin, end, Cell::EMPTY) != end;
+template <typename CellsRange>
+  requires array_like_range_for_value<CellsRange, Cell>
+bool range_has_empty_cells(CellsRange &&cells) {
+  return std::ranges::find(std::forward<CellsRange>(cells), Cell::EMPTY) !=
+         std::ranges::end(cells);
 }
 
-template <typename RuleIter, typename CellIter, typename FitIter>
-  requires forward_iterator_for_value<RuleIter, Rule> &&
-           forward_iterator_for_value<CellIter, Cell> &&
-           forward_iterator_for_value<FitIter, int>
-struct FitIterState {
-  FitIterState(std::vector<int> *cur_fit, RuleIter rule_i, RuleIter rule_end,
-               CellIter cell_i, CellIter cell_end, FitIter lfit_i,
-               FitIter lfit_end, FitIter rfit_i, FitIter rfit_end)
-      : m_cur_fit(cur_fit), m_rule_i(rule_i), m_rule_end(rule_end),
-        m_cell_i(cell_i), m_cell_end(cell_end), m_lfit_i(lfit_i),
-        m_lfit_end(lfit_end), m_rfit_i(rfit_i), m_rfit_end(rfit_end),
-        prev_cell_was_filled(false) {
-    process_new_rule();
-  }
+struct FitDpTable {
+  struct DpValue {
+    bool can_fit;
+    int index;
+  };
 
-  std::vector<int> *m_cur_fit;
+  using DpValueOpt = std::optional<DpValue>;
+  using DpRow = std::vector<DpValueOpt>;
+  using DpTable = std::vector<DpRow>;
 
-  RuleIter m_rule_i;
-  RuleIter m_rule_end;
-  CellIter m_cell_i;
-  CellIter m_cell_end;
+  FitDpTable(int n_rules, int n_cells)
+      : values(n_rules + 1, DpRow(n_cells + 1, std::nullopt)) {}
 
-  FitIter m_lfit_i;
-  FitIter m_lfit_end;
-  FitIter m_rfit_i;
-  FitIter m_rfit_end;
-
-  bool prev_cell_was_filled;
-
-  bool is_last_rule;
-  int min_required_space;
-
-  bool rule_fits() {
-    if (range_has_empty_cells(m_cell_i, m_cell_i + *m_rule_i)) {
-      return false;
-    }
-
-    if (is_last_rule) {
-      return !range_has_filled_cells(m_cell_i + *m_rule_i, m_cell_end);
-    } else {
-      auto next_lfit = *(m_lfit_i + 1);
-      auto jump_length = std::max(*m_rule_i + 1, next_lfit - m_cur_fit->back());
-      return !range_has_filled_cells(m_cell_i + *m_rule_i,
-                                     m_cell_i + jump_length);
-    }
-  }
-
-  bool should_stop_cell_iter() {
-    return m_cell_end - m_cell_i < min_required_space || prev_cell_was_filled ||
-           m_cur_fit->back() > *m_rfit_i;
-  }
-
-  void next_cell() {
-    prev_cell_was_filled = *m_cell_i == Cell::FILLED;
-    ++m_cell_i;
-    ++m_cur_fit->back();
-  }
-
-  bool should_stop_rule_iter() { return m_rule_i == m_rule_end; }
-
-  void next_rule() {
-    ++m_rule_i;
-    ++m_lfit_i;
-    ++m_rfit_i;
-
-    process_new_rule();
-  }
-
-private:
-  void process_new_rule() {
-    if (should_stop_rule_iter()) {
-      return;
-    }
-
-    if (m_cur_fit->empty()) {
-      m_cell_i += *m_lfit_i;
-      m_cur_fit->push_back(*m_lfit_i);
-    } else {
-      auto prev_rule = *(m_rule_i - 1);
-      auto jump_length = std::max(prev_rule + 1, *m_lfit_i - m_cur_fit->back());
-      m_cell_i += jump_length;
-      m_cur_fit->push_back(m_cur_fit->back() + jump_length);
-    }
-    prev_cell_was_filled = false;
-
-    is_last_rule = m_rule_i == m_rule_end - 1;
-
-    min_required_space = is_last_rule ? *m_rule_i : (*m_rule_i + 1);
-  }
+  DpTable values;
 };
 
-template <typename RuleIter, typename CellIter, typename FitIter>
-  requires forward_iterator_for_value<RuleIter, Rule> &&
-           forward_iterator_for_value<CellIter, Cell> &&
-           forward_iterator_for_value<FitIter, int>
-bool fit_iter(std::vector<int> &cur_fit,
-              FitIterState<RuleIter, CellIter, FitIter> &state) {
-  if (state.should_stop_rule_iter()) {
-    return true;
+// Right fit rules {rule_i, rule_{i+1}, ..., rule_{N-1}} into cells {cell_i,
+// cell_{i+1}, ..., cell_{M-1}}
+template <typename RulesRange, typename CellsRange, typename FitRange>
+  requires array_like_range_for_value<RulesRange, Rule> &&
+           array_like_range_for_value<CellsRange, Cell> &&
+           array_like_range_for_value<FitRange, int>
+void fit_dp_iter(FitDpTable &table, const RulesRange &rules,
+                 const CellsRange &cells, const FitRange &lfit,
+                 const FitRange &rfit, int rule_i, int cell_i) {
+  auto &table_value = table.values[rule_i][cell_i];
+  assert(!table_value.has_value());
+
+  if (rule_i == rules.size()) {
+    table_value = {
+        .can_fit = !range_has_filled_cells(cells | std::views::drop(cell_i)),
+        .index = -1}; // index does not matter
+    return;
   }
 
-  for (; !state.should_stop_cell_iter(); state.next_cell()) {
-    if (!state.rule_fits()) {
+  if (cell_i > rfit[rule_i]) {
+    // not enough space for this block
+    table_value = {.can_fit = false};
+    return;
+  }
+
+  auto lower_bound = std::max(cell_i, lfit[rule_i]);
+  if (range_has_filled_cells(cells | std::views::take(lower_bound) |
+                             std::views::drop(cell_i))) {
+    // got filled cells that cannot be covered
+    table_value = {.can_fit = false};
+    return;
+  }
+
+  auto current_rule = rules[rule_i];
+  auto next_rule_i = rule_i + 1;
+  auto is_last_rule = rule_i == rules.size() - 1;
+  auto next_cell_i = rfit[rule_i] + current_rule + (is_last_rule ? 0 : 1);
+  assert(next_cell_i <= cells.size());
+  assert(next_rule_i <= rules.size());
+  for (int i = rfit[rule_i]; i >= lower_bound; --i, --next_cell_i) {
+    assert(cells.size() - i >= current_rule);
+    if (range_has_filled_cells(cells | std::views::take(i) |
+                               std::views::drop(cell_i))) {
+      // uncovered filled cells remaining before block
+      continue;
+    }
+    if (range_has_empty_cells(cells | std::views::drop(i) |
+                              std::views::take(current_rule))) {
+      // block covers empty cell
+      continue;
+    }
+    if (i + current_rule < cells.size() &&
+        cells[i + current_rule] == Cell::FILLED) {
+      // block is next to a filled cell
       continue;
     }
 
-    auto new_state = state;
-    new_state.next_rule();
-    if (fit_iter(cur_fit, new_state)) {
-      return true;
+    // block fits, trying to satisfy remaining rules
+    auto &next_dp_value = table.values[next_rule_i][next_cell_i];
+    if (!next_dp_value.has_value()) {
+      fit_dp_iter(table, rules, cells, lfit, rfit, next_rule_i, next_cell_i);
     }
-    cur_fit.pop_back();
+    assert(next_dp_value.has_value());
+
+    if (next_dp_value->can_fit) {
+      table_value = {.can_fit = true, .index = i};
+      return;
+    }
   }
 
-  return false;
+  table_value = {.can_fit = false};
+  return;
+}
+
+template <typename RulesRange>
+  requires array_like_range_for_value<RulesRange, Rule>
+std::vector<int> fit_dp_construct(const FitDpTable &table,
+                                  const RulesRange &rules) {
+  std::vector<int> fit;
+  int rule_i = 0;
+  int cell_i = 0;
+  while (rule_i < rules.size()) {
+    const auto &dp_value = table.values[rule_i][cell_i];
+    assert(dp_value.has_value() && dp_value->can_fit);
+    fit.push_back(dp_value->index);
+    cell_i = dp_value->index + rules[rule_i] + 1;
+    ++rule_i;
+  }
+  return fit;
 }
 
 std::optional<std::vector<int>> fit_left(const RulesLine &rules,
                                          const SolutionLine &line) {
-  std::vector<int> fit;
-  auto state = FitIterState(&fit, line.m_rules.begin(), line.m_rules.end(),
-                            line.m_cells.begin(), line.m_cells.end(),
-                            line.m_lfit.begin(), line.m_lfit.end(),
-                            line.m_rfit.begin(), line.m_rfit.end());
-  if (fit_iter(fit, state)) {
+  FitDpTable table(rules.size(), line.size());
+  auto rules_reversed = rules | std::views::reverse;
+  fit_dp_iter(table, rules_reversed, line.m_cells | std::views::reverse,
+              line.m_lfit_reversed, line.m_rfit_reversed, 0, 0);
+  assert(table.values[0][0].has_value());
+  if (table.values[0][0]->can_fit) {
+    auto fit = fit_dp_construct(table, rules_reversed);
+    reverse_fit(line.size(), rules_reversed, fit);
     return fit;
   }
   return std::nullopt;
@@ -338,21 +330,17 @@ std::optional<std::vector<int>> fit_left(const RulesLine &rules,
 
 std::optional<std::vector<int>> fit_right(const RulesLine &rules,
                                           const SolutionLine &line) {
-  std::vector<int> fit;
-  auto state =
-      FitIterState(&fit, line.m_rules.rbegin(), line.m_rules.rend(),
-                   line.m_cells.rbegin(), line.m_cells.rend(),
-                   line.m_lfit_reversed.begin(), line.m_lfit_reversed.end(),
-                   line.m_rfit_reversed.begin(), line.m_rfit_reversed.end());
-  if (fit_iter(fit, state)) {
-    reverse_fit(line.size(), line.m_rules.rbegin(), line.m_rules.rend(), fit);
-    return fit;
+  FitDpTable table(rules.size(), line.size());
+  fit_dp_iter(table, rules, line.m_cells, line.m_lfit, line.m_rfit, 0, 0);
+  assert(table.values[0][0].has_value());
+  if (table.values[0][0]->can_fit) {
+    return fit_dp_construct(table, rules);
   }
   return std::nullopt;
 }
 
 UpdateResult update_cells_from_empty_rules(CellsLine &&line) {
-  if (range_has_filled_cells(line.begin(), line.end())) {
+  if (range_has_filled_cells(line)) {
     return {.m_rules_fit = false,
             .m_line_updated = false,
             .m_line_solved = false,
@@ -413,8 +401,10 @@ UpdateResult update_cells_from_lfit_and_rfit(const RulesLine &rules,
     if (i == intersect_right - 1) {
       prev_rule_rightmost_i = rfit[rule_i] + rules[rule_i];
       ++rule_i;
-      intersect_left = rfit[rule_i];
-      intersect_right = lfit[rule_i] + rules[rule_i];
+      if (rule_i < rules.size()) {
+        intersect_left = rfit[rule_i];
+        intersect_right = lfit[rule_i] + rules[rule_i];
+      }
     }
   }
 
