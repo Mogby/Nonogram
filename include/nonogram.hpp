@@ -65,6 +65,7 @@ struct Solution {
   int m_height;
 
   bool m_is_final;
+  int m_n_solved_cells;
 
   std::vector<SolutionLine> m_rows_;
   std::vector<SolutionLine> m_columns_;
@@ -80,7 +81,7 @@ std::optional<std::vector<int>> fit_right(const RulesLine &rules,
 
 struct UpdateResult {
   bool m_rules_fit;
-  bool m_line_updated;
+  int m_n_updated_cells;
   bool m_line_solved;
 
   CellsLine m_cells;

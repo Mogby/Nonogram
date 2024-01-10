@@ -184,7 +184,7 @@ TEST(TestSolver, TestUpdateCellsSimple) {
   auto line = make_solution_line(rules, cells);
   auto update = update_cells(rules, line);
   ASSERT_TRUE(update.m_rules_fit);
-  ASSERT_TRUE(update.m_line_updated);
+  ASSERT_TRUE(update.m_n_updated_cells);
   auto update_str = print_cells_line(update.m_cells);
   ASSERT_EQ(update_str, "~XX~~~");
 }
@@ -197,7 +197,7 @@ TEST(TestSolver, TestUpdateCellsOneSolution) {
   auto line = make_solution_line(rules, cells);
   auto update = update_cells(rules, line);
   ASSERT_TRUE(update.m_rules_fit);
-  ASSERT_TRUE(update.m_line_updated);
+  ASSERT_TRUE(update.m_n_updated_cells);
   auto update_str = print_cells_line(update.m_cells);
   ASSERT_EQ(update_str, ".XXX.X");
 }
@@ -210,7 +210,7 @@ TEST(TestSolver, TestUpdateCellsPartialUpdateFromFills) {
   auto line = make_solution_line(rules, cells);
   auto update = update_cells(rules, line);
   ASSERT_TRUE(update.m_rules_fit);
-  ASSERT_TRUE(update.m_line_updated);
+  ASSERT_TRUE(update.m_n_updated_cells);
   auto update_str = print_cells_line(update.m_cells);
   ASSERT_EQ(update_str, "~X~...~X~");
 }
@@ -223,7 +223,7 @@ TEST(TestSolver, TestUpdateCellsPartialUpdateFromBlanks) {
   auto line = make_solution_line(rules, cells);
   auto update = update_cells(rules, line);
   ASSERT_TRUE(update.m_rules_fit);
-  ASSERT_TRUE(update.m_line_updated);
+  ASSERT_TRUE(update.m_n_updated_cells);
   auto update_str = print_cells_line(update.m_cells);
   ASSERT_EQ(update_str, "~X~...~X~");
 }
@@ -236,7 +236,7 @@ TEST(TestSolver, TestUpdateCellsPartialUpdateFromBlanks2) {
   auto line = make_solution_line(rules, cells);
   auto update = update_cells(rules, line);
   ASSERT_TRUE(update.m_rules_fit);
-  ASSERT_TRUE(update.m_line_updated);
+  ASSERT_TRUE(update.m_n_updated_cells);
   auto update_str = print_cells_line(update.m_cells);
   ASSERT_EQ(update_str, ".XXX.");
 }
@@ -252,7 +252,7 @@ TEST(TestSolver, TestUpdateCellsIdempotency) {
   line.update_fits(std::move(update.m_lfit.value()),
                    std::move(update.m_rfit.value()));
   update = update_cells(rules, line);
-  ASSERT_FALSE(update.m_line_updated);
+  ASSERT_FALSE(update.m_n_updated_cells);
 }
 
 TEST(TestSolver, TestUpdateCellsEmptyRule) {
@@ -263,7 +263,7 @@ TEST(TestSolver, TestUpdateCellsEmptyRule) {
   auto line = make_solution_line(rules, cells);
   auto update = update_cells(rules, line);
   ASSERT_TRUE(update.m_rules_fit);
-  ASSERT_TRUE(update.m_line_updated);
+  ASSERT_TRUE(update.m_n_updated_cells);
   auto update_str = print_cells_line(update.m_cells);
   ASSERT_EQ(update_str, ".........");
 }
@@ -276,5 +276,5 @@ TEST(TestSolver, TestUpdateCellsRulesDoNotFit) {
   auto line = make_solution_line(rules, cells);
   auto update = update_cells(rules, line);
   ASSERT_FALSE(update.m_rules_fit);
-  ASSERT_FALSE(update.m_line_updated);
+  ASSERT_FALSE(update.m_n_updated_cells);
 }

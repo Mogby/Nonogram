@@ -1,11 +1,14 @@
 #include "nonogram.hpp"
 
+#include <functional>
 #include <iterator>
 #include <optional>
 
 #include <cassert>
+#include <queue>
 #include <sstream>
 #include <string>
+#include <utility>
 
 Puzzle::Puzzle(int width, int height)
     : m_width(width), m_height(height), m_vertical_rules(width),
@@ -124,7 +127,7 @@ const size_t SolutionLine::size() const { return m_cells.size(); }
 Solution::Solution(int width, int height,
                    const std::vector<RulesLine> &vertical_rules,
                    const std::vector<RulesLine> &horizontal_rules)
-    : m_width(width), m_height(height), m_is_final(false) {
+    : m_width(width), m_height(height), m_is_final(false), m_n_solved_cells(0) {
   for (int i = 0; i < m_height; ++i) {
     m_rows_.emplace_back(width, horizontal_rules[i]);
   }
@@ -137,6 +140,10 @@ const Cell Solution::get_cell(int i, int j) const {
   return m_rows_[i].m_cells[j];
 }
 void Solution::set_cell(int i, int j, Cell value) {
+  if (value != Cell::UNKNOWN && (m_rows_[i].m_cells[j] == Cell::UNKNOWN ||
+                                 m_columns_[j].m_cells[i] == Cell::UNKNOWN)) {
+    ++m_n_solved_cells;
+  }
   m_rows_[i].m_cells[j] = value;
   m_columns_[j].m_cells[i] = value;
 }
@@ -354,20 +361,20 @@ std::optional<std::vector<int>> fit_right(const RulesLine &rules,
 UpdateResult update_cells_from_empty_rules(CellsLine &&line) {
   if (range_has_filled_cells(line.begin(), line.end())) {
     return {.m_rules_fit = false,
-            .m_line_updated = false,
+            .m_n_updated_cells = 0,
             .m_line_solved = false,
             .m_cells = std::move(line)};
   }
 
-  bool line_updated = false;
+  int n_updated_cells = 0;
   for (int i = 0; i < line.size(); ++i) {
     if (line[i] == Cell::UNKNOWN) {
       line[i] = Cell::EMPTY;
-      line_updated = true;
+      ++n_updated_cells;
     }
   }
   return {.m_rules_fit = true,
-          .m_line_updated = line_updated,
+          .m_n_updated_cells = n_updated_cells,
           .m_line_solved = true,
           .m_cells = std::move(line),
           .m_lfit = std::vector<int>(),
@@ -383,7 +390,7 @@ UpdateResult update_cells_from_lfit_and_rfit(const RulesLine &rules,
   int intersect_right = lfit[0] + rules[0];
   int prev_rule_rightmost_i = 0;
   bool line_solved = true;
-  bool line_updated = false;
+  int n_updated_cells = 0;
   for (int i = 0; i < line.size(); ++i) {
     if (line_solved && rule_i < rules.size() && lfit[rule_i] != rfit[rule_i]) {
       line_solved = false;
@@ -393,7 +400,7 @@ UpdateResult update_cells_from_lfit_and_rfit(const RulesLine &rules,
       if ((rule_i == rules.size() && i < line.size()) || (i < lfit[rule_i])) {
         // cell cannot covered by any rule
         if (line[i] == Cell::UNKNOWN) {
-          line_updated = true;
+          ++n_updated_cells;
           line[i] = Cell::EMPTY;
         }
       }
@@ -406,7 +413,7 @@ UpdateResult update_cells_from_lfit_and_rfit(const RulesLine &rules,
     if (intersect_left <= i && i < intersect_right && line[i] != Cell::FILLED) {
       // cell is covered by current rule
       assert(line[i] == Cell::UNKNOWN);
-      line_updated = true;
+      ++n_updated_cells;
       line[i] = Cell::FILLED;
     }
 
@@ -419,7 +426,7 @@ UpdateResult update_cells_from_lfit_and_rfit(const RulesLine &rules,
   }
 
   return {.m_rules_fit = rule_i == rules.size(),
-          .m_line_updated = line_updated,
+          .m_n_updated_cells = n_updated_cells,
           .m_line_solved = line_solved,
           .m_cells = std::move(line),
           .m_lfit = std::move(lfit),
@@ -435,7 +442,7 @@ UpdateResult update_cells(const RulesLine &rules, const SolutionLine &line) {
   auto lfit_opt = fit_left(rules, line);
   if (!lfit_opt.has_value()) {
     return {
-        .m_rules_fit = false, .m_line_updated = false, .m_line_solved = false};
+        .m_rules_fit = false, .m_n_updated_cells = 0, .m_line_solved = false};
   }
   auto rfit_opt = fit_right(rules, line);
   assert(rfit_opt.has_value());
@@ -445,11 +452,23 @@ UpdateResult update_cells(const RulesLine &rules, const SolutionLine &line) {
                                          std::move(rfit_opt.value()));
 }
 
-Solution solve_iter(const Puzzle &puzzle, Solution &solution) {
-  bool updated = true;
+struct SolveIterResult {
+  Solution m_solution;
+  int m_n_updated_cells;
+  bool m_rules_fit;
+
+  int get_n_solved_cells_before_last_update() const {
+    return m_solution.m_n_solved_cells - m_n_updated_cells;
+  }
+};
+
+SolveIterResult solve_iter(const Puzzle &puzzle, Solution &solution,
+                           std::optional<int> max_n_iter = std::nullopt) {
+  int n_updated_cells = 0;
+  bool stop_iter = false;
   UpdateResult update_result;
-  while (updated) {
-    updated = false;
+  while (!stop_iter) {
+    bool updated = false;
 
     for (int j = 0; j < puzzle.m_width; ++j) {
       if (solution.is_column_solved(j)) {
@@ -458,12 +477,15 @@ Solution solve_iter(const Puzzle &puzzle, Solution &solution) {
       const auto &column = solution.get_column(j);
       update_result = update_cells(puzzle.m_vertical_rules[j], column);
       if (!update_result.m_rules_fit) {
-        return solution;
+        return {.m_solution = solution,
+                .m_n_updated_cells = n_updated_cells,
+                .m_rules_fit = false};
       }
       if (update_result.m_line_solved) {
         solution.mark_column_solved(j);
       }
-      updated = updated || update_result.m_line_updated;
+      updated = updated || update_result.m_n_updated_cells;
+      n_updated_cells += update_result.m_n_updated_cells;
       solution.set_column(j, update_result.m_cells,
                           std::move(update_result.m_lfit.value()),
                           std::move(update_result.m_rfit.value()));
@@ -476,42 +498,89 @@ Solution solve_iter(const Puzzle &puzzle, Solution &solution) {
       const auto &row = solution.get_row(i);
       update_result = update_cells(puzzle.m_horizontal_rules[i], row);
       if (!update_result.m_rules_fit) {
-        return solution;
+        return {.m_solution = solution,
+                .m_n_updated_cells = n_updated_cells,
+                .m_rules_fit = false};
       }
       if (update_result.m_line_solved) {
         solution.mark_row_solved(i);
       }
-      updated = updated || update_result.m_line_updated;
+      updated = updated || update_result.m_n_updated_cells;
+      n_updated_cells += update_result.m_n_updated_cells;
       solution.set_row(i, update_result.m_cells,
                        std::move(update_result.m_lfit.value()),
                        std::move(update_result.m_rfit.value()));
     }
-  }
 
-  for (int i = 0; i < solution.m_height; ++i) {
-    for (int j = 0; j < solution.m_width; ++j) {
-      if (solution.get_cell(i, j) == Cell::UNKNOWN) {
-        for (auto bt_value : {Cell::FILLED, Cell::EMPTY}) {
-          auto solution_bt = solution;
-          solution_bt.set_cell(i, j, bt_value);
-          auto next_solution = solve_iter(puzzle, solution_bt);
-          if (next_solution.m_is_final) {
-            return next_solution;
-          }
-        }
-        solution.m_is_final = false;
-        return solution;
-      }
+    stop_iter = !updated;
+    if (max_n_iter.has_value()) {
+      --max_n_iter.value();
+      stop_iter = stop_iter || max_n_iter.value() == 0;
     }
   }
 
-  solution.m_is_final = true;
-  return solution;
+  solution.m_is_final =
+      solution.m_n_solved_cells == solution.m_width * solution.m_height;
+
+  return {.m_solution = solution,
+          .m_n_updated_cells = n_updated_cells,
+          .m_rules_fit = true};
+}
+
+bool compare_solve_iter_results(const SolveIterResult &lt,
+                                const SolveIterResult &rt) {
+  if (lt.m_rules_fit != rt.m_rules_fit) {
+    return !lt.m_rules_fit;
+  }
+
+  if (lt.get_n_solved_cells_before_last_update() !=
+      rt.get_n_solved_cells_before_last_update()) {
+    return lt.get_n_solved_cells_before_last_update() <
+           rt.get_n_solved_cells_before_last_update();
+  }
+
+  return lt.m_n_updated_cells < rt.m_n_updated_cells;
+}
+
+using SolutionQueue = std::priority_queue<
+    SolveIterResult, std::vector<SolveIterResult>,
+    std::function<bool(const SolveIterResult &, const SolveIterResult &)>>;
+
+void bfs(const Puzzle &puzzle, const SolveIterResult &cur_iter,
+         SolutionQueue &queue) {
+  const auto &solution = cur_iter.m_solution;
+  for (int i = 0; i < solution.m_height; ++i) {
+    for (int j = 0; j < solution.m_width; ++j) {
+      if (solution.get_cell(i, j) != Cell::UNKNOWN) {
+        continue;
+      }
+
+      for (auto fill_value : {Cell::FILLED, Cell::EMPTY}) {
+        auto new_solution = solution;
+        new_solution.set_cell(i, j, fill_value);
+        queue.push(solve_iter(puzzle, new_solution, 2));
+      }
+    }
+  }
 }
 
 Solution solve_puzzle(const Puzzle &puzzle) {
   Solution initial_solution(puzzle.m_width, puzzle.m_height,
                             puzzle.m_vertical_rules, puzzle.m_horizontal_rules);
-  auto solution = solve_iter(puzzle, initial_solution);
-  return solution;
+  SolutionQueue queue(compare_solve_iter_results);
+  queue.push(solve_iter(puzzle, initial_solution));
+  while (!queue.empty()) {
+    auto next = queue.top();
+    queue.pop();
+    if (!next.m_rules_fit) {
+      // Exhausted all branches
+      return next.m_solution;
+    }
+    if (next.m_solution.m_is_final) {
+      // Found a solution
+      return next.m_solution;
+    }
+    bfs(puzzle, next, queue);
+  }
+  std::unreachable();
 }
